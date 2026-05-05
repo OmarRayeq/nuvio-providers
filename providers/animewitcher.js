@@ -92,6 +92,64 @@ function getTmdbTitles(tmdbId, mediaType) {
   });
 }
 
+// Fetch season-specific titles from TMDB (anime sites store each season as a separate entry)
+function getTmdbSeasonTitles(tmdbId, seasonNum) {
+  return __async(this, null, function* () {
+    var titles = [];
+    var seen = {};
+    function add(t) { if (t && !seen[t.toLowerCase()]) { seen[t.toLowerCase()] = true; titles.push(t); } }
+    try {
+      var results = yield Promise.all([
+        fetchJson(TMDB_BASE + "/tv/" + tmdbId + "/season/" + seasonNum + "?api_key=" + TMDB_KEY + "&language=en-US"),
+        fetchJson(TMDB_BASE + "/tv/" + tmdbId + "/season/" + seasonNum + "?api_key=" + TMDB_KEY + "&language=ar-SA"),
+        fetchJson(TMDB_BASE + "/tv/" + tmdbId + "/season/" + seasonNum + "?api_key=" + TMDB_KEY + "&language=ja-JP")
+      ]);
+      var en = results[0] || {};
+      var ar = results[1] || {};
+      var ja = results[2] || {};
+      // Season names from TMDB (often the exact title used on anime sites)
+      add(en.name);
+      add(ar.name);
+      add(ja.name);
+    } catch (e) {
+      console.log("[AnimeWitcher] getTmdbSeasonTitles error: " + e.message);
+    }
+    return titles;
+  });
+}
+
+// Generate season-specific search queries from base titles
+function buildSeasonSearchTitles(baseTitles, seasonNum, tmdbSeasonTitles) {
+  var queries = [];
+  var seen = {};
+  function add(t) { if (t && !seen[t.toLowerCase()]) { seen[t.toLowerCase()] = true; queries.push(t); } }
+
+  // 1. TMDB season-specific names first (most accurate)
+  for (var i = 0; i < tmdbSeasonTitles.length; i++) {
+    add(tmdbSeasonTitles[i]);
+  }
+
+  // 2. Base title + season variations
+  var arabicSeasons = ["", "الثاني", "الثالث", "الرابع", "الخامس", "السادس", "السابع"];
+  for (var i = 0; i < baseTitles.length; i++) {
+    var t = baseTitles[i];
+    add(t + " Season " + seasonNum);
+    add(t + " S" + seasonNum);
+    add(t + " " + seasonNum);
+    if (seasonNum <= 6 && arabicSeasons[seasonNum]) {
+      add(t + " الموسم " + arabicSeasons[seasonNum]);
+    }
+    add(t + " الموسم " + seasonNum);
+  }
+
+  // 3. Base titles last (fallback)
+  for (var i = 0; i < baseTitles.length; i++) {
+    add(baseTitles[i]);
+  }
+
+  return queries;
+}
+
 // ── Algolia ────────────────────────────────────────────────────────────
 function refreshAlgoliaKeys() {
   return __async(this, null, function* () {
@@ -388,21 +446,30 @@ function getStreams(tmdbId, mediaType, season, episode) {
       console.log("[AnimeWitcher] Request: " + mediaType + " " + tmdbId + (isTV ? " S" + seasonNum + "E" + episodeNum : ""));
 
       // Step 1: Get TMDB titles
-      var titles = yield getTmdbTitles(tmdbId, mediaType);
-      if (!titles || titles.length === 0) {
+      var baseTitles = yield getTmdbTitles(tmdbId, mediaType);
+      if (!baseTitles || baseTitles.length === 0) {
         console.log("[AnimeWitcher] No titles from TMDB");
         return [];
       }
-      console.log("[AnimeWitcher] TMDB titles: " + titles.join(", "));
+      console.log("[AnimeWitcher] TMDB base titles: " + baseTitles.join(", "));
+
+      // Step 1b: For seasons > 1, build season-specific search titles
+      var searchTitles = baseTitles;
+      if (isTV && seasonNum > 1) {
+        var tmdbSeasonNames = yield getTmdbSeasonTitles(tmdbId, seasonNum);
+        console.log("[AnimeWitcher] TMDB season " + seasonNum + " names: " + tmdbSeasonNames.join(", "));
+        searchTitles = buildSeasonSearchTitles(baseTitles, seasonNum, tmdbSeasonNames);
+        console.log("[AnimeWitcher] Season search queries: " + searchTitles.slice(0, 6).join(", ") + (searchTitles.length > 6 ? "..." : ""));
+      }
 
       // Step 2: Refresh Algolia keys and search
       yield refreshAlgoliaKeys();
 
       var allHits = [];
-      for (var i = 0; i < titles.length; i++) {
-        var hits = yield algoliaSearch(titles[i]);
+      for (var i = 0; i < searchTitles.length; i++) {
+        var hits = yield algoliaSearch(searchTitles[i]);
         if (hits.length > 0) allHits = allHits.concat(hits);
-        if (allHits.length >= 20) break;
+        if (allHits.length >= 30) break;
       }
 
       if (allHits.length === 0) {
@@ -410,8 +477,9 @@ function getStreams(tmdbId, mediaType, season, episode) {
         return [];
       }
 
-      // Step 3: Find best match
-      var match = findBestMatch(allHits, titles);
+      // Step 3: Find best match (use season-aware titles for matching)
+      var matchTitles = (isTV && seasonNum > 1) ? searchTitles : baseTitles;
+      var match = findBestMatch(allHits, matchTitles);
       if (!match) {
         console.log("[AnimeWitcher] No match above threshold");
         return [];
