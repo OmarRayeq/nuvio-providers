@@ -439,8 +439,28 @@ function getStreams(tmdbId, mediaType, season, episode) {
       console.log("[AnimeWitcher] Servers: " + servers.length);
       if (servers.length === 0) return [];
 
-      // Sort by quality descending
-      servers.sort(function (a, b) { return qualityToInt(b.quality) - qualityToInt(a.quality); });
+      // Filter: only keep PD and MF servers (others give source errors)
+      servers = servers.filter(function (srv) {
+        var n = (srv.name || "").toUpperCase();
+        return n === "PD" || n === "MF";
+      });
+      console.log("[AnimeWitcher] After PD/MF filter: " + servers.length + " servers");
+      if (servers.length === 0) return [];
+
+      // Filter: only keep 1080p and above
+      servers = servers.filter(function (srv) {
+        return qualityToInt(srv.quality) >= 1080;
+      });
+      console.log("[AnimeWitcher] After 1080p+ filter: " + servers.length + " servers");
+      if (servers.length === 0) return [];
+
+      // Sort: PD first, then by quality descending
+      servers.sort(function (a, b) {
+        var aIsPD = (a.name || "").toUpperCase() === "PD" ? 0 : 1;
+        var bIsPD = (b.name || "").toUpperCase() === "PD" ? 0 : 1;
+        if (aIsPD !== bIsPD) return aIsPD - bIsPD;
+        return qualityToInt(b.quality) - qualityToInt(a.quality);
+      });
 
       // Step 7: Resolve server URLs in parallel
       var resolvePromises = servers.map(function (srv) {
