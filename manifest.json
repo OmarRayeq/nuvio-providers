@@ -1,0 +1,71 @@
+{
+  "name": "Arabic Providers (re-3arabi)",
+  "version": "1.0.0",
+  "scrapers": [
+    {
+      "id": "AnimeWitcher",
+      "name": "AnimeWitcher",
+      "description": "Arabic anime streaming — direct MP4 streams via AnimeWitcher (Algolia + Firestore)",
+      "version": "1.0.0",
+      "author": "re-3arabi",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/animewitcher.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "",
+      "contentLanguage": [
+        "ar",
+        "ja"
+      ]
+    },
+    {
+      "id": "WitAnime",
+      "name": "WitAnime",
+      "description": "Arabic dubbed and subtitled anime with encrypted server resolution from WitAnime",
+      "version": "1.0.0",
+      "author": "re-3arabi",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/witanime_provider.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "",
+      "contentLanguage": [
+        "ar",
+        "ja"
+      ]
+    },
+    {
+      "id": "Akwam",
+      "name": "Akwam",
+      "description": "Arabic movies and TV series — multi-quality direct streams from Akwam",
+      "version": "1.0.0",
+      "author": "re-3arabi",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/akwam.js",
+      "enabled": true,
+      "formats": [
+        "mp4"
+      ],
+      "logo": "",
+      "contentLanguage": [
+        "ar",
+        "en"
+      ]
+    }
+  ]
+}
