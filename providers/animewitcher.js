@@ -20,8 +20,8 @@ var TMDB_BASE = "https://api.themoviedb.org/3";
 var FIREBASE_PROJECT = "animewitcher-1c66d";
 var FIRESTORE_BASE = "https://firestore.googleapis.com/v1/projects/" + FIREBASE_PROJECT + "/databases/(default)/documents";
 
-var DEFAULT_ALGOLIA_APP_ID = "5UIU27G8CZ";
-var DEFAULT_ALGOLIA_API_KEY = "ef06c5ee4a0d213c011694f18861805c";
+var DEFAULT_ALGOLIA_APP_ID = "XC5QF67TBB";
+var DEFAULT_ALGOLIA_API_KEY = "3c3b61d7c280fd05ea1d496a40bd2b64";
 
 var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 var FETCH_TIMEOUT = 15000;
@@ -119,30 +119,34 @@ function getTmdbSeasonTitles(tmdbId, seasonNum) {
 }
 
 // Generate season-specific search queries from base titles
+// AnimeWitcher uses patterns like: "Title 2nd Season", "Title S02", "Title Season 2"
 function buildSeasonSearchTitles(baseTitles, seasonNum, tmdbSeasonTitles) {
   var queries = [];
   var seen = {};
   function add(t) { if (t && !seen[t.toLowerCase()]) { seen[t.toLowerCase()] = true; queries.push(t); } }
+
+  // Ordinal suffix map matching AnimeWitcher's naming ("2nd Season", "3rd Season", etc.)
+  var ordinals = ["", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th"];
+  var ordinal = seasonNum <= 10 ? ordinals[seasonNum] : seasonNum + "th";
+  var padded = seasonNum < 10 ? "0" + seasonNum : "" + seasonNum;
 
   // 1. TMDB season-specific names first (most accurate)
   for (var i = 0; i < tmdbSeasonTitles.length; i++) {
     add(tmdbSeasonTitles[i]);
   }
 
-  // 2. Base title + season variations
-  var arabicSeasons = ["", "الثاني", "الثالث", "الرابع", "الخامس", "السادس", "السابع"];
+  // 2. Base title + AnimeWitcher naming patterns
   for (var i = 0; i < baseTitles.length; i++) {
     var t = baseTitles[i];
-    add(t + " Season " + seasonNum);
-    add(t + " S" + seasonNum);
-    add(t + " " + seasonNum);
-    if (seasonNum <= 6 && arabicSeasons[seasonNum]) {
-      add(t + " الموسم " + arabicSeasons[seasonNum]);
-    }
-    add(t + " الموسم " + seasonNum);
+    // Patterns actually used on AnimeWitcher (from Algolia data):
+    add(t + " " + ordinal + " Season");     // "Jujutsu Kaisen 2nd Season"
+    add(t + " S" + padded);                  // "Attack on Titan S02"
+    add(t + " Season " + seasonNum);          // "Title Season 2"
+    add(t + " " + seasonNum);                 // "Title 2"
+    add(t + " S" + seasonNum);                // "Title S2"
   }
 
-  // 3. Base titles last (fallback)
+  // 3. Base titles last (fallback — Algolia may still find season entries)
   for (var i = 0; i < baseTitles.length; i++) {
     add(baseTitles[i]);
   }
@@ -154,24 +158,18 @@ function buildSeasonSearchTitles(baseTitles, seasonNum, tmdbSeasonTitles) {
 function refreshAlgoliaKeys() {
   return __async(this, null, function* () {
     try {
-      var url = FIRESTORE_BASE + "/Settings";
+      // The keys are stored in Settings/search_service document (not search_settings)
+      var url = FIRESTORE_BASE + "/Settings/search_service";
       var data = yield fetchJson(url);
-      if (!data || !data.documents) return;
-      for (var i = 0; i < data.documents.length; i++) {
-        var fields = data.documents[i].fields;
-        if (fields && fields.search_settings) {
-          var ss = fields.search_settings;
-          if (ss.mapValue && ss.mapValue.fields) {
-            var sf = ss.mapValue.fields;
-            var newId = sf.app_id_v3 && sf.app_id_v3.stringValue;
-            var newKey = sf.api_key && sf.api_key.stringValue;
-            if (newId && newKey) {
-              algoliaAppId = newId;
-              algoliaApiKey = newKey;
-              console.log("[AnimeWitcher] Algolia keys updated: " + algoliaAppId);
-              return;
-            }
-          }
+      if (data && data.fields) {
+        var f = data.fields;
+        var newId = f.app_id && f.app_id.stringValue;
+        var newKey = f.api_key && f.api_key.stringValue;
+        if (newId && newKey) {
+          algoliaAppId = newId;
+          algoliaApiKey = newKey;
+          console.log("[AnimeWitcher] Algolia keys refreshed: " + algoliaAppId);
+          return;
         }
       }
     } catch (e) {
@@ -182,7 +180,7 @@ function refreshAlgoliaKeys() {
 
 function algoliaSearch(query) {
   return __async(this, null, function* () {
-    var url = "https://" + algoliaAppId + "-dsn.algolia.net/1/indexes/series/query";
+    var url = "https://" + algoliaAppId.toLowerCase() + "-dsn.algolia.net/1/indexes/series/query";
     var params = 'attributesToRetrieve=["objectID","name","poster_uri","type","english_title"]&hitsPerPage=20&page=0&query=' + encodeURIComponent(query);
     var body = JSON.stringify({ params: params });
     var resp = yield fetchJson(url, {
